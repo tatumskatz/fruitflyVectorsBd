@@ -1,0 +1,155 @@
+---
+title: "dosage_dependency"
+author: "Alyssa Byer"
+date: "5/15/2019"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+library(car)
+dd <- read.csv("dosage_dependency.csv")
+dd1 <- lm(dd$ZE ~ as.factor(dd$Sex):as.factor(dd$Washed):as.factor(dd$Concentration))
+Anova(dd1)
+summary(dd1)
+
+dd0 <- lm(dd$ZE ~ as.factor(dd$Sex)+as.factor(dd$Washed)+as.factor(dd$Concentration))
+Anova(dd0)
+
+dd2 <- lm(dd$ZE ~ as.factor(dd$Sex):as.factor(dd$Washed))
+dd3 <- lm(dd$ZE ~ as.factor(dd$Sex):as.factor(dd$Concentration))
+dd4 <- lm(dd$ZE ~ as.factor(dd$Washed):as.factor(dd$Concentration))
+anova(dd1,dd2)
+anova(dd1,dd3)
+anova(dd1,dd4)
+anova(dd2,dd3)
+anova(dd2,dd4)
+anova(dd3,dd4)
+
+d <- lm(dd$ZE ~ as.factor(dd$Concentration))
+anova.d <- aov(d)
+summary(anova.d)
+
+AIC(dd1)
+AIC(dd2)
+AIC(dd3)
+AIC(dd4)
+AIC(d) #lowest
+
+BIC(dd1)
+BIC(dd2) #lowest
+BIC(dd3)
+BIC(dd4)
+BIC(d)
+
+means<- round(tapply(dd$ZE, as.factor(dd$Concentration), mean), digits=2)
+means
+
+plot(as.factor(dd$Concentration),dd$ZE,ylim=c(0,800))
+abline(lm(as.factor(dd$Concentration) ~ dd$ZE), col='blue')
+
+plot(dd$Concentration,dd$ZE,ylim=c(0,800))
+abline(lm(as.factor(dd$Concentration) ~ dd$ZE), col='blue')
+```
+
+```{r}
+library(ggplot2)
+dd1 <- lm(ZE ~ as.factor(Sex)+as.factor(Washed)+Concentration+as.factor(Sex):as.factor(Washed)+as.factor(Sex):Concentration+as.factor(Washed):Concentration+as.factor(Sex):as.factor(Washed):Concentration, data=dd)
+Anova(dd1) #concentration, sex:concentration, washed:concentration, sex:washed:concentration all sig
+
+dd2 <- lm(ZE~as.factor(Sex)+as.factor(Washed)+Concentration, data=dd)
+
+anova(dd1, dd2) #third order interaction too important
+
+dd3 <- lm(ZE~as.factor(Sex)+as.factor(Washed)+Concentration+as.factor(Sex):as.factor(Washed):Concentration, data=dd)
+
+anova(dd1, dd3) #no difference if I remove second order interactions, so lets use dd3
+
+dd4 <- aov(ZE~as.factor(Concentration), data=dd)
+TukeyHSD(dd4)
+dd5 <- lm(ZE~Concentration, data=dd)
+summary(dd5)
+
+
+par(mfrow=c(1,2))
+
+ggplot(data=dd, aes(x=Washed, y=ZE, color=as.factor(Concentration)))+
+  geom_jitter(aes(pch=Sex), size=5, alpha=0.8)
+
+boxplot(ZE~Concentration, data=dd[-37,])
+
+dd3 <- lm(ZE~as.factor(Sex)+as.factor(Washed)+Concentration+as.factor(Sex):as.factor(Washed):Concentration, data=dd[-37,])
+
+```
+
+```{r}
+#With outlier
+dosage_depen_1 <- lm(ZE~as.factor(Sex)+as.factor(Washed)+Concentration+as.factor(Sex):as.factor(Washed):Concentration, data=dd)
+anova(dosage_depen_1)
+
+summary(dosage_depen_1)
+boxplot(ZE~Concentration, data=dd, ylab = "Zoospores per fly", xlab = "Concentration")
+
+d <- ggplot(data=dd, aes(x=as.factor(Concentration), y=ZE, color=as.factor(Sex)))+
+  geom_jitter(aes(pch=Washed), size=5, alpha=0.8)
+d + xlab("Concentration") + ylab("Zoospores per fly") + labs( color = "Sex")
+
+#Log-scaled y axis
+d1 <- ggplot(data=dd, aes(x=as.factor(Concentration), y=ZE, color=as.factor(Sex)))+
+  geom_jitter(aes(pch=Washed), size=5, alpha=0.8)
+d1 + scale_y_continuous(trans='log10') + xlab("Concentration") + ylab("Zoospores per fly") + labs( color = "Sex")
+
+anova_dd1 <- aov(ZE~as.factor(Sex)+as.factor(Washed)+Concentration+as.factor(Sex):as.factor(Washed):Concentration, data=dd)
+summary(anova_dd1)
+
+
+#Without outlier
+dosage_depen_2 <- lm(ZE~as.factor(Sex)+as.factor(Washed)+Concentration+as.factor(Sex):as.factor(Washed):Concentration, data=dd[-37,])
+anova(dosage_depen_2)
+
+summary(dosage_depen_2) #f-statistic much higher, but still include outlier for results
+boxplot(ZE~Concentration, data=dd[-37,],ylab = "Zoospores per fly", xlab = "Concentration")
+
+d0 <- ggplot(data=dd[-37,], aes(x=as.factor(Concentration), y=ZE, color=as.factor(Sex)))+
+  geom_jitter(aes(pch=Washed), size=5, alpha=0.8)
+d0 + xlab("Concentration") + ylab("Zoospores per fly") + labs( color = "Sex")
+
+#Log-scaled y axis
+d2 <- ggplot(data=dd[-37,], aes(x=as.factor(Concentration), y=ZE, color=as.factor(Sex)))+
+  geom_jitter(aes(pch=Washed), size=5, alpha=0.8)
+d2 + scale_y_continuous(trans='log10') + xlab("Concentration") + ylab("Zoospores per fly") + labs( color = "Sex")
+
+anova_dd2 <- aov(ZE~as.factor(Sex)+as.factor(Washed)+Concentration+as.factor(Sex):as.factor(Washed):Concentration, data=dd[-37,])
+summary(anova_dd2)
+
+
+#Presence/absence with binary response variable, logistic regression
+#pa as new column with 0s and 1s for absence/presence
+bin0 <- glm( pa ~ as.factor(Sex)+as.factor(Washed)+Concentration+as.factor(Sex):as.factor(Washed):Concentration, data=dd, family=binomial, maxit=100)
+summary(bin0)
+
+bin <- glm( pa ~ as.factor(Sex)+as.factor(Washed)+Concentration+as.factor(Sex):as.factor(Washed):Concentration, data=dd[-37,], family=binomial, maxit=100)
+summary(bin)
+
+#Log transform non-zero data
+dd_trans <- log10((dd$ZE) + 1)
+anova_dd_trans <- aov(dd_trans~as.factor(Sex)+as.factor(Washed)+as.factor(Concentration)+as.factor(Sex):as.factor(Washed):as.factor(Concentration), data=dd)
+summary(anova_dd_trans)
+TukeyHSD(anova_dd_trans)
+
+dd_trans1 <- log10((dd[-37,]$ZE) + 1)
+anova_dd_trans1 <- aov(dd_trans1~as.factor(Sex)+as.factor(Washed)+as.factor(Concentration)+as.factor(Sex):as.factor(Washed):as.factor(Concentration), data=dd[-37,])
+summary(anova_dd_trans1)
+TukeyHSD(anova_dd_trans1)
+
+#Tukey Kramer w/o interactions
+dd6 <- aov(ZE~as.factor(Concentration), data=dd)
+summary(dd6)
+TukeyHSD(dd6)
+
+dd5 <- aov(ZE~as.factor(Concentration), data=dd[-37,])
+summary(dd5)
+TukeyHSD(dd5)
+```

@@ -1,0 +1,30 @@
+---
+title: "mortality"
+author: "Alyssa Byer"
+date: "6/10/2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+m <- read.csv("mortality_bin.csv")
+m1 <- read.csv("mortality.csv")
+library(lme4)
+library(lmerTest)
+library(multcomp)
+library(ggplot2)
+mort <- glmer(mortality ~ sex + treatment + day + (1|vial), data=m, family=binomial)
+summary(mort)
+
+summary(glht(mort, mcp(treatment="Tukey")))
+summary(glht(mort, mcp(sex="Tukey")))
+
+positive <- subset(m1, treatment=="positive")
+negative <- subset(m1, treatment=="negative")
+supe <- subset(m1, treatment=="supe")
+
+ggplot(data=positive, aes(x=day, y=mortality, color=as.factor(sex))) + ylim(0,1) + geom_point() + ggtitle("Positive")+ labs(color="Sex")
+ggplot(data=negative, aes(x=day, y=mortality, color=as.factor(sex))) + ylim(0,1) + geom_point()+ ggtitle("Negative")+ labs(color="Sex")
+ggplot(data=supe, aes(x=day, y=mortality, color=as.factor(sex))) + ylim(0,1) + geom_point() + ggtitle("Supe")+ labs(color="Sex")
+```

@@ -1,0 +1,363 @@
+---
+title: "Inoculation"
+author: "Alyssa Byer"
+date: "6/13/2019"
+output: html_document
+---
+
+```{r}
+#Graphs
+I <- read.csv("Inoculation.csv")
+library(ggplot2)
+library(lmerTest)
+library(lmerTest)
+library(multcomp)
+library(car)
+library(MASS)
+library(fitdistrplus)
+library(numDeriv)
+library(reshape2)
+library(plyr)
+install.packages("RCurl")
+library(RCurl)
+install.packages("dfoptim")
+library(dfoptim)
+install.packages("optimx")
+library(optimx)
+install.packages("nloptr")
+library(nloptr)
+install.packages("gamlss")
+library(gamlss)
+install.packages("AICcmodavg")
+library(AICcmodavg)
+
+summary(I)
+
+#subset data
+positive <- subset(I, Treatment=="positive")
+negative <- subset(I, Treatment=="negative")
+heat <- subset(I, Treatment=="hk")
+
+ggplot(data=positive, aes(x=Day, y=ZE, color=as.factor(Sex))) + ylim(0,5000) + geom_point() + ggtitle("Positive") + labs(color="Sex")
+ggplot(data=negative, aes(x=Day, y=ZE, color=as.factor(Sex))) + ylim(0,5000) + geom_point() + ggtitle("Negative")+ labs(color="Sex")
+ggplot(data=heat, aes(x=Day, y=ZE, color=as.factor(Sex))) + ylim(0,5000) + geom_point() + ggtitle("Heat-Killed")+ labs(color="Sex")
+
+#log-scale y-axis
+p <- ggplot(data=positive, aes(x=Day, y=ZE, color=as.factor(Sex))) + geom_point() + ggtitle("Positive Log")
+p + scale_y_continuous(trans='log10') + xlab("Day") + ylab("Zoospores per fly") + labs( color = "Sex")
+hk <- ggplot(data=heat, aes(x=Day, y=ZE, color=as.factor(Sex))) + geom_point() + ggtitle("Heat-Killed Log")
+hk + scale_y_continuous(trans='log10') + xlab("Day") + ylab("Zoospores per fly") + labs( color = "Sex")
+
+#box plots
+boxplot(positive$ZE)
+boxplot(negative$ZE)
+boxplot(heat$ZE)
+
+boxplot(log10(positive$ZE))
+boxplot(log10(heat$ZE))
+```
+
+```{r}
+#fitting a model
+
+#The y axis represents the observations and the x axis represents the quantiles modeled by the distribution. The solid red line represents a perfect distribution fit and the dashed red lines are the confidence intervals of the perfect distribution fit. You want to pick the distribution for which the largest number of observations falls between the dashed lines. --https://ase.tufts.edu/gsc/gradresources/guidetomixedmodelsinr/mixed%20model%20guide.html
+#ALL DATA
+I$ZE.n <- I$ZE + 1
+normal <- fitdist(I$ZE.n, "norm")
+plot(normal)
+lnorm <- fitdist(I$ZE.n, "lnorm")
+plot(lnorm)###
+gamma <- fitdist(I$ZE.n, "gamma", method = "mle", lower = c(0,0), start = list(scale = 1, shape = 1))
+plot(gamma) ##I feel like gamma fits better?
+I$ZE.i <- as.integer(I$ZE)
+poisson <- fitdistr(I$ZE.i, "Poisson")
+qqp(I$ZE, "pois", lambda = poisson$estimate)
+```
+
+
+```{r}
+#linear models--testing
+I_lm <- lm(ZE ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment), data=I)
+summary(I_lm)
+anova(I_lm)
+TukeyHSD(aov(I_lm))
+I_lm1 <- lm(positive$ZE ~ as.factor(positive$Sex)+as.factor(positive$Washed)+as.factor(positive$Day), data=I)
+summary(I_lm1)
+anova(I_lm1)
+TukeyHSD(aov(I_lm1))
+
+I_lmer <- lmer(ZE ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial), data=I)
+I_lmer1 <- lmer(ZE ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial)+(1|trial), data=I)
+I_lmer2 <- lmer(ZE ~ Sex+Washed+Day+Treatment+(1|vial), data=I)
+anova(I_lmer,I_lmer1)
+anova(I_lmer, I_lmer2)
+summary(I_lmer)
+Anova(I_lmer)
+summary(glht(I_lmer2, linfct = mcp(Washed = "Tukey"))) #cannot do Day or vial
+summary(glht(I_lmer2, linfct = mcp(Sex = "Tukey")))
+summary(glht(I_lmer2, linfct = mcp(Treatment = "Tukey")))
+```
+
+```{r}
+#lnorm
+#function relevel for negative control
+I$Treatment <- relevel(I$Treatment, ref = "negative") #how do I include?
+
+#quasi model
+I_gm <- glm(ZE ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial), data=I, family = quasi(link = "identity", variance = "constant"))
+I_gm1 <- glm(ZE ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial)+(1|trial), data=I, family = quasi(link = "identity", variance = "constant"))
+I_gm2 <- glm(ZE ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial)+as.factor(Sex):as.factor(Washed)+as.factor(Sex):as.factor(Day)+as.factor(Sex):as.factor(Treatment)+as.factor(Washed):as.factor(Day)+as.factor(Day)+as.factor(Treatment), data = I,family = quasi(link = "identity", variance = "constant"))
+I_gm3 <- glm(ZE ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial)+as.factor(Sex):as.factor(Washed):as.factor(Day):as.factor(Treatment), data=I, family = quasi(link = "identity", variance = "constant"))
+I_gm4 <- glm(ZE ~ Sex + Washed + Day + Treatment + (1|vial),  data=I, family = quasi(link = "identity", variance = "constant"))
+
+model_list <- list(I_gm, I_gm1, I_gm2, I_gm3, I_gm4)
+model_names <- c("1", "2", "3", "4", "5")
+models <- aictab(model_list, model_names, second.ord=T)
+print(models) #??? cannot find, AICc = NA
+
+anova(I_gm, I_gm1, test = "F") #leave out trial
+anova(I_gm, I_gm2, test = "F") #second order interactions not significant
+anova(I_gm, I_gm3, test = "F") #third order interactions not significant
+anova(I_gm, I_gm4, test = "F") #no difference with factors as.factor or not
+
+summary(I_gm)
+eval1 <- aov(I_gm)
+TukeyHSD(eval1)
+
+#including relevelled negative control?? same result
+I_gm0 <- glm(ZE ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(I$Treatment)+(1|vial), data=I, family = quasi(link = "identity", variance = "constant"))
+summary(I_gm0)
+eval2 <- aov(I_gm0)
+TukeyHSD(eval2)
+
+#gamlss
+#questions: 
+  #1.cannot figure out AICc
+  #2. NAs in data even with ZE+1, so used na.omit, is this okay?
+  #3. post-hoc for gamlss?
+
+is.na(I)
+is.na(I$ZE + 1)
+
+I_lnorm <- gamlss( ZE + 1 ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial), data=na.omit(I), family =LOGNO)
+summary(I_lnorm)
+
+I_lnorm1 <- gamlss(ZE + 1 ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial)+(1|trial), data=na.omit(I), family = LOGNO)
+summary(I_lnorm1) #AIC no difference, leave trial out
+
+I_lnorm2 <- gamlss(ZE + 1 ~ Sex + Washed + Day + Treatment + (1|vial), data=na.omit(I), family = LOGNO)
+summary(I_lnorm2) #slightly lower
+
+I_lnorm3 <- gamlss(ZE + 1 ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial)+as.factor(Sex):as.factor(Washed)+as.factor(Sex):as.factor(Day)+as.factor(Sex):as.factor(Treatment)+as.factor(Washed):as.factor(Day)+as.factor(Day)+as.factor(Treatment), data=na.omit(I), family =LOGNO )
+summary(I_lnorm3) #second order interactions not important
+
+I_lnorm4 <- gamlss(ZE + 1 ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial)+as.factor(Sex):as.factor(Washed):as.factor(Day):as.factor(Treatment), data=na.omit(I), family =LOGNO )
+summary(I_lnorm4) #third order interactions not important
+
+model_list <- list(I_lnorm, I_lnorm1, I_lnorm2, I_lnorm3, I_lnorm4)
+model_names <- c("I1", "I2", "I3", "I4", "I5")
+models <- aictab(model_list, model_names, second.ord=T)
+all_mod <- lapply(model_list, glm.convert)
+model <- aictab(all_mod, model_names, sort = TRUE, c.hat = 1, second.ord = TRUE)
+AICc(I_lnorm, return.K = FALSE)
+```
+
+```{r}
+#trying to fit a gamma distribution in glmer--cannot converge
+#Rescale and center continuous parameters
+numcols <- grep("^c\\.",names(I))
+Is <- I
+Is[,numcols] <- scale(Is[,numcols])
+I_sc <- update(I_glmer,data=Is)
+
+#check singularity
+tt <- getME(I_sc,"theta")
+ll <- getME(I_sc,"lower")
+min(tt[ll==0])
+
+#Double-checking gradient calculations
+derivs1 <- I_sc@optinfo$derivs
+sc_grad1 <- with(derivs1,solve(Hessian,gradient))
+max(abs(sc_grad1))
+max(pmin(abs(sc_grad1),abs(derivs1$gradient)))
+dd <- update(I_sc,devFunOnly=TRUE)
+pars <- unlist(getME(I_sc,c("theta","fixef")))
+grad2 <- grad(dd,pars)
+hess2 <- hessian(dd,pars)
+sc_grad2 <- solve(hess2,grad2)
+max(pmin(abs(sc_grad2),abs(grad2)))
+
+#Restart
+ss <- getME(I_sc,c("theta","fixef"))
+I2 <- update(I_sc,start=ss,control=glmerControl(optCtrl=list(maxfun=2e4)))
+
+#Optimizers
+I3 <- update(I_sc,start=ss,control=glmerControl(optimizer="bobyqa",
+                            optCtrl=list(maxfun=10e6)))
+I4 <- update(I_sc,start=ss,control=glmerControl(optimizer = "nloptwrap"))
+I5 <- update(I_sc,start=ss,control=glmerControl(optimizer = "Nelder_Mead"))
+I6 <- update(I_sc,start=ss,control=glmerControl(optimizer="optimx",
+                              optCtrl=list(method="L-BFGS-B")))
+I7 <- update(I_glmer,start=ss,control=glmerControl(cbind(optimizer=rep(c("bobyqa",
+                            "Nelder_Mead",
+                            "nlminbwrap",
+                            "nmkbw",
+                            "optimx",
+                            "nloptwrap" ),
+                          c(rep(1,5),2)),
+                  method= c(rep("",4), "L-BFGS-B",
+                  "NLOPT_LN_NELDERMEAD", "NLOPT_LN_BOBYQA"))))
+                  
+I.0 <- cbind(optimizer=
+                      rep(c("bobyqa",
+                            "Nelder_Mead",
+                            "nlminbwrap",
+                            "nmkbw",
+                            "optimx",
+                            "nloptwrap" ),
+                          c(rep(1,5),2)),
+                  method= c(rep("",4), "L-BFGS-B",
+                  "NLOPT_LN_NELDERMEAD", "NLOPT_LN_BOBYQA"))
+
+Inoc <- function(I_sc,par,lower,upper,control) {
+    if (length(par)==1) {
+        res <- optim(fn=fn,par=par,lower=lower,upper=100*par,
+                     method="Brent")
+    } else {
+        if (!is.null(control$maxfun)) {
+            control$maxfeval <- control$maxfun
+            control$maxfun <- NULL
+        }
+        res <- dfoptim::nmkb(fn=fn,par=par,
+                             lower=lower,upper=upper,control=control)
+    }
+    res$fval <- res$value
+    res
+}
+summary(I.0)
+
+I_glmer <- glmer(ZE + 1 ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial), data=I, family = Gamma) 
+I_glmer1 <- glmer(ZE + 1 ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial)+(1|trial), data=I, family = Gamma(link="log")) 
+I_glmer2 <- glmer(ZE + 1~ Sex + Washed + Day + Treatment + (1|vial), data = I, family = gaussian(link="log"))
+
+I0 <- relevel(I$Treatment, ref = "negative")
+I_glmer <- glmer(ZE + 1 ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(I0)+(1|vial), data=I, family = Gamma) 
+I_glmer1 <- glmer(ZE + 1 ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(I0)+(1|vial)+(1|trial), data=I, family = Gamma(link="log")) 
+I_glmer2 <- glmer(ZE + 1~ Sex + Washed + Day + I0 + (1|vial), data = I, family = gaussian(link="log"))
+```
+
+```{r}
+kruskal.test(ZE ~ Treatment, data = I)
+pairwise.wilcox.test(I$ZE, I$Treatment, p.adjust.method = "BH")
+#possible: poisson, negative binomial, gamma, beta, lognormal (zero-inflated?)
+
+#lnorm
+I$Treatment <- relevel(I$Treatment, ref = "negative")
+I_lnorm <- gamlss( ZE ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial), family =LOGNO)
+I_lnorm <- gamlss( I$ZE ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial), family =LOGNO)
+I_lnorm <- gamlss( ZE ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial), family =LOGNO, data = I)
+I_lnorm <- gamlss( ZE ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial), data=na.omit(I), family =LOGNO, data = I)
+I_lnorm <- gamlss( ZE ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial), data=na.omit(I), family =LOGNO)
+summary(I_lnorm)
+anova(I_lnorm)
+aov(I_lnorm)
+summary(I_lnorm)
+summary(glht(I_lnorm, mcp(Treatment="Tukey")))
+summary(glht(I_lnorm, mcp(as.factor(Treatment)="Tukey")))
+summary(glht(I_lnorm, mcp(as.factor(Treatment) ="Tukey")))
+summary(glht(I_lnorm, mcp( I$Treatment="Tukey")))
+summary(glht(I_lnorm, mcp( Treatment ="Tukey")))
+summary(glht(I_lnorm, mcp(Sex="Tukey")))
+summary(I_lnorm)
+
+
+
+
+
+#beta
+I$Treatment <- relevel(I$Treatment, ref = "negative")
+I_beta <- glmmADMB(ZE ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial), data=I, family="beta")
+
+
+
+
+
+#zero-inflated poisson
+install.packages("pscl")
+library(pscl)
+
+#only worked when ZE were integers
+#could not work with full model, treatment/vial
+
+summary(Inoc1 <- zeroinfl(as.integer(ZE) ~ as.factor(Sex), data=I, dist = "poisson"))
+summary(Inoc2 <- zeroinfl(as.integer(ZE) ~ as.factor(Sex)+as.factor(Day), data=I, dist = "poisson"))
+summary(Inoc3 <- zeroinfl(as.integer(ZE) ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day), data=I, dist = "poisson"))
+
+summary(Inoc4 <- zeroinfl(as.integer(ZE) ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+(1|vial), data=I, dist = "poisson")) #Error in optim(fn = loglikfun, gr = gradfun, par = c(start$count, start$zero, : non-finite value supplied by optim
+
+summary(Inoc5 <- zeroinfl(as.integer(ZE) ~ as.factor(Treatment), data=I, dist = "poisson")) #system is computationally singular: reciprocal condition number = 2.0408e-220FALSE
+
+summary(Inoc <- zeroinfl(as.integer(ZE) ~ as.factor(Sex)+as.factor(Washed)+as.factor(Day)+as.factor(Treatment)+(1|vial), data=I)) #full model
+```
+```{r}
+install.packages("ggmosaic")
+library(plyr)
+library(ggmosaic)
+library(ggplot2)
+
+new <- I[,-1]
+for(i in 1:nrow(new)){
+new$positive[i] <- if(new$ZE[i]==0){0}else{1}
+}
+count(new[,c(1,2,3,4)])
+
+#all together
+ggplot(data = new) +
+  geom_mosaic(aes(x = product(Day, Washed, Treatment, Sex),
+                  fill=as.factor(positive)))
+
+###check variables to see if we can remove them###
+#sex
+ggplot(data = new) +
+  geom_mosaic(aes(x = product(Sex),
+                  fill=as.factor(positive)))
+sex <- table(new[,c(2,9)])
+chisq.test(sex) #no effect of sex
+
+#day
+ggplot(data = new) +
+  geom_mosaic(aes(x = product(Day),
+                  fill=as.factor(positive)))
+day <- table(new[,c(1,9)])
+chisq.test(day) #no effect of day
+
+#washed
+ggplot(data = new) +
+  geom_mosaic(aes(x = product(Washed),
+                  fill=as.factor(positive)))
+wash <- table(new[,c(3,9)])
+chisq.test(wash) #no effect of washing
+
+#treatment
+ggplot(data = new) +
+  geom_mosaic(aes(x = product(Treatment),
+                  fill=as.factor(positive)))
+treat <- table(new[,c(4,9)])
+chisq.test(treat) #treatment highly significant (makes sense)
+
+#vial
+ggplot(data = new) +
+  geom_mosaic(aes(x = product(vial),
+                  fill=as.factor(positive)))
+vial <- table(new[,c(7,9)])
+chisq.test(vial) #not enough reps, so can't run
+
+#trial
+ggplot(data = new) +
+  geom_mosaic(aes(x = product(trial),
+                  fill=as.factor(positive)))
+trial <- table(new[,c(8,9)])
+chisq.test(trial) #not significant
+
+#so we probably only really care about treatment?!
+```
